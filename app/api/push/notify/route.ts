@@ -30,7 +30,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: "nothing to announce" });
   }
 
-  const admin = createAdminClient();
+  let admin;
+  try {
+    admin = createAdminClient();
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Server is not configured." }, { status: 500 });
+  }
 
   const { data: members } = await admin
     .from("conversation_members")
@@ -61,14 +66,21 @@ export async function POST(req: Request) {
       .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
       .gt("created_at", r.last_read_at);
 
-    const result = await sendToSubscriptions(admin, mine, {
-      title: sender?.display_name ?? "usie",
-      body: text,
-      url: `/chats/${m.conversation_id}`,
-      tag: `chat-${m.conversation_id}`,
-      badge: count ?? 1,
-    });
-    sent += result.sent;
+    try {
+      const result = await sendToSubscriptions(admin, mine, {
+        title: sender?.display_name ?? "usie",
+        body: text,
+        url: `/chats/${m.conversation_id}`,
+        tag: `chat-${m.conversation_id}`,
+        badge: count ?? 1,
+      });
+      sent += result.sent;
+      if (result.sent === 0 && result.firstError) console.error("push not delivered", result.firstError);
+    } catch (e) {
+      // Configuration problem (missing or mismatched keys): say so in the Vercel logs.
+      console.error("push failed:", e instanceof Error ? e.message : e);
+      return NextResponse.json({ error: e instanceof Error ? e.message : "Push failed" }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ ok: true, sent });

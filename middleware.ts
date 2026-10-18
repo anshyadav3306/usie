@@ -26,10 +26,21 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+
+  // Pass the verified user id to pages. A copy sent by a visitor is always thrown away first.
+  const forwarded = new Headers(request.headers);
+  forwarded.delete("x-usie-user");
+  if (user) forwarded.set("x-usie-user", user.id);
+  const withUser = () => {
+    const next = NextResponse.next({ request: { headers: forwarded } });
+    response.cookies.getAll().forEach((c) => next.cookies.set(c));
+    return next;
+  };
+
   // The database webhook has no browser session; it proves itself with a secret header instead.
-  if (path.startsWith("/api/push/notify") || path.startsWith("/api/cron/")) return response;
+  if (path.startsWith("/api/push/notify") || path.startsWith("/api/cron/")) return withUser();
   // Email links (password reset) must work whether or not someone is signed in.
-  if (path.startsWith("/auth/")) return response;
+  if (path.startsWith("/auth/")) return withUser();
   const isAuthPage = path.startsWith("/login") || path.startsWith("/signup") || path.startsWith("/forgot-password");
 
   if (!user && !isAuthPage) {
@@ -42,7 +53,7 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/chats";
     return NextResponse.redirect(url);
   }
-  return response;
+  return withUser();
 }
 
 export const config = {

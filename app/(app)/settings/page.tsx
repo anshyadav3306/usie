@@ -5,6 +5,7 @@ import PrivacyToggles from "@/components/PrivacyToggles";
 import ProfileEditor from "@/components/ProfileEditor";
 import PushSettings from "@/components/PushSettings";
 import ThemeToggle from "@/components/ThemeToggle";
+import { getUserId } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 async function signOut() {
@@ -15,16 +16,14 @@ async function signOut() {
 }
 
 export default async function SettingsPage() {
+  const userId = await getUserId();
+  if (!userId) redirect("/login");
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
 
   const { data: me } = await supabase
     .from("profiles")
     .select("display_name, username, about, avatar_url, show_last_seen, read_receipts")
-    .eq("id", user.id)
+    .eq("id", userId)
     .single();
 
   return (
@@ -35,7 +34,7 @@ export default async function SettingsPage() {
         <h2 className="mb-2 mt-5 text-sm font-bold text-ink-muted">Profile</h2>
         <ProfileEditor
           key={`${me?.display_name}-${me?.username}-${me?.avatar_url}`}
-          userId={user.id}
+          userId={userId}
           initial={{
             display_name: me?.display_name ?? "",
             username: me?.username ?? "",
@@ -46,7 +45,7 @@ export default async function SettingsPage() {
 
         <h2 className="mb-2 mt-8 text-sm font-bold text-ink-muted">Privacy</h2>
         <PrivacyToggles
-          userId={user.id}
+          userId={userId}
           initial={{ show_last_seen: me?.show_last_seen !== false, read_receipts: me?.read_receipts !== false }}
         />
 

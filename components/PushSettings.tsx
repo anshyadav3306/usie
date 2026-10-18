@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bell, BellOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { VAPID_PUBLIC_KEY, ensureRegistration, isIOS, isStandalone, pushSupported, subscribeThisDevice } from "@/lib/push";
+import { VAPID_PUBLIC_KEY, describePushError, ensureRegistration, isIOS, isStandalone, pushSupported, subscribeThisDevice } from "@/lib/push";
 
 type State = "loading" | "unconfigured" | "needs-install" | "unsupported" | "denied" | "off" | "on";
 
@@ -20,9 +20,15 @@ export default function PushSettings() {
     if (!VAPID_PUBLIC_KEY) return setState("unconfigured");
     if (Notification.permission === "denied") return setState("denied");
     if (Notification.permission !== "granted") return setState("off");
-    const reg = await ensureRegistration();
-    const sub = await reg.pushManager.getSubscription();
-    setState(sub ? "on" : "off");
+    try {
+      const reg = await ensureRegistration();
+      const sub = await reg.pushManager.getSubscription();
+      setState(sub ? "on" : "off");
+    } catch (e) {
+      console.error("usie: could not check notifications", e);
+      setState("off");
+      setMessage(await describePushError(e));
+    }
   }, []);
 
   useEffect(() => {
@@ -38,8 +44,9 @@ export default function PushSettings() {
       if (permission !== "granted") return setState("off");
       await subscribeThisDevice();
       setState("on");
-    } catch {
-      setMessage("Couldn't turn notifications on. Check your connection and try again.");
+    } catch (e) {
+      console.error("usie: turning on notifications failed", e);
+      setMessage(await describePushError(e));
     } finally {
       setBusy(false);
     }
@@ -56,8 +63,9 @@ export default function PushSettings() {
         await sub.unsubscribe();
       }
       setState("off");
-    } catch {
-      setMessage("Couldn't turn notifications off. Try again.");
+    } catch (e) {
+      console.error("usie: turning off notifications failed", e);
+      setMessage(await describePushError(e));
     } finally {
       setBusy(false);
     }
@@ -72,6 +80,22 @@ export default function PushSettings() {
       setMessage(res.ok ? "Test sent. It should arrive in a few seconds." : (json.error ?? "The test failed."));
     } catch {
       setMessage("The test failed. Check your connection.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function checkSetup() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/push/status");
+      const json = await res.json();
+      if (!res.ok) setMessage(json.error ?? "The check failed.");
+      else if (json.ok) setMessage(`Server setup looks right. Devices saved for you: ${json.devices ?? 0}.`);
+      else setMessage(`Server problems: ${json.problems.join(" ")}`);
+    } catch {
+      setMessage("The check failed. Check your connection.");
     } finally {
       setBusy(false);
     }
@@ -115,6 +139,11 @@ export default function PushSettings() {
             </button>
           </div>
         </>
+      )}
+      {(state === "on" || state === "off") && (
+        <button onClick={checkSetup} disabled={busy} className="mt-3 text-xs font-semibold text-brand-600 underline underline-offset-2 disabled:opacity-60 dark:text-brand-200">
+          Check server setup
+        </button>
       )}
       {message && (
         <p role="status" className="mt-3 rounded-xl bg-brand-50 px-3 py-2 text-sm text-ink-soft dark:bg-white/10 dark:text-white/80">

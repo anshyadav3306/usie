@@ -205,8 +205,17 @@ begin
     'an outsider cannot upload into the couple''s folder');
   perform public._t_assert(public._t_run(o, 'authenticated', format('select 1 from storage.objects where bucket_id = %L', 'chat-media')) = 'OK:0',
     'an outsider cannot see the couple''s files');
-  perform public._t_assert(public._t_run(b, 'authenticated', format('delete from storage.objects where bucket_id = %L and name = %L', 'chat-media', conv || '/photo.jpg')) = 'OK:0',
-    'only the uploader can delete a file');
+  -- Supabase refuses plain-SQL deletes on its file table (deleting must go through the Storage API),
+  -- so this checks the rule itself, and also that the other person's delete attempt gets nowhere.
+  perform public._t_assert(
+    exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'chat_media_delete' and qual like '%owner_id%'),
+    'the file-delete rule requires being the uploader');
+  perform public._t_assert(
+    public._t_run(b, 'authenticated', format('delete from storage.objects where bucket_id = %L and name = %L', 'chat-media', conv || '/photo.jpg')) in ('OK:0') or
+    public._t_run(b, 'authenticated', format('delete from storage.objects where bucket_id = %L and name = %L', 'chat-media', conv || '/photo.jpg')) like 'ERR:%',
+    'the other person cannot delete someone else''s file');
+  perform public._t_assert(exists (select 1 from storage.objects where bucket_id = 'chat-media' and name = conv || '/photo.jpg'),
+    'the file is still there after that attempt');
   perform public._t_assert(public._t_run(a, 'authenticated', format('insert into storage.objects (bucket_id, name, owner_id) values (%L, %L, %L)', 'avatars', b || '/me.jpg', a)) = 'ERR:42501',
     'nobody can upload into someone else''s avatar folder');
   perform public._t_assert(public._t_run(a, 'authenticated', format('insert into storage.objects (bucket_id, name, owner_id) values (%L, %L, %L)', 'avatars', a || '/me.jpg', a)) = 'OK:1',

@@ -127,3 +127,35 @@ The reset link works out of the box when opened in the same browser or phone tha
 - **Tests:** `npm test`.
 
 Read `SECURITY.md` for what is protected and what is not.
+
+---
+
+## Notifications: setup checklist and troubleshooting
+
+Vercel > Settings > Environment Variables. The names must match exactly:
+
+| Name | What it is | Secret? |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | no |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | no |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key | **yes** |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | public half of the push key pair | no |
+| `VAPID_PRIVATE_KEY` | private half of the same pair | **yes** |
+| `VAPID_SUBJECT` | `mailto:you@example.com` | no |
+| `WEBHOOK_SECRET` | random string, same one in the Supabase webhook header | **yes** |
+| `CRON_SECRET` | random string | **yes** |
+
+Paste each value exactly, with no quotes and no spaces around it.
+Variables that start with `NEXT_PUBLIC_` are baked in when the app is built, so after changing one, redeploy with **Use existing Build Cache turned off**.
+
+In the app: Settings > Notifications > **Check server setup** tells you what is missing or wrong.
+
+| Message | Meaning |
+|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY is missing` | Add the variable in Vercel and redeploy. |
+| `keys are not a matching pair` | Generate one new pair (`npx web-push generate-vapid-keys`) and set both. |
+| `Brave blocks push notifications` | brave://settings/privacy > turn on "Use Google services for push messaging" > restart Brave. |
+| `Saving this device failed: ...` | The database refused the save. Run `supabase/tests/schema_check.sql`. |
+| `push service rejected this server's keys (403)` | Old sign-up from before a key change. Turn notifications off and on again on that device. |
+
+Database health check: run `supabase/tests/schema_check.sql`. Every row should say `true`.
